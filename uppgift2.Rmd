@@ -1,0 +1,363 @@
+---
+title: "uppgift2"
+author: "Li Wu"
+date: "2025-02-08"
+output: pdf_document
+---
+
+
+```{r library}
+library(xts)
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+library(fitdistrplus)
+```
+
+
+```{r readTXT}
+data <- read.table("C:\\Users\\catri\\OneDrive\\??????\\VT25\\Riskmodeller och reservsättning inom sakförsäkring VT25\\Projekt1_Grupp9.txt",header = TRUE, sep = ";")
+data$ClaimType <- as.factor(data$ClaimType)
+summary(data)
+```
+```{r Plots}
+
+#seperate two branches
+Product1_data <- data %>% filter(ClaimType == "1")
+Product2_data <- data %>% filter(ClaimType == "2")
+
+str(Product1_data)
+summary(Product1_data)
+
+# Disable scientific notation globally
+options(scipen = 999)
+# Scatter plot for two products
+# Because the scale difference of ClaimCost, the plot only shows three levels. Actually the first level overlaps with two calsses.
+ggplot(data, aes(x = ClaimDay, y = ClaimCost, color = ClaimType)) +
+  geom_point(size = 1) +
+  labs(title = "Scatter Plot of Two Products", x = "ClaimDay", y = "ClaimCost") +
+  theme_minimal() +
+  ylim(0, 100000) +
+  xlim(0, 400)
+
+ggplot(Product1_data, aes(x = Product1_data$ClaimCost)) +
+  geom_histogram(bins = 50, fill = "lightblue", color = "black") +
+  labs(x = "Claim Size", y = "Frequency", title = "Branch 1: Histogram of claim sizes") +
+  scale_x_log10() +
+  theme_minimal() 
+
+ggplot(Product2_data, aes(x = Product2_data$ClaimCost)) +
+  geom_histogram(bins = 50, fill = "lightblue", color = "black") +
+  labs(x = "Claim Size", y = "Frequency", title = "Branch 2") +
+  scale_x_log10() +
+  theme_minimal() 
+  
+
+# Disable scientific notation globally
+options(scipen = 999)
+
+Product1_lower_claimCost <-Product1_data %>% filter( ClaimCost < 100000)
+Product1_higer_claimCost <-Product1_data %>% filter( ClaimCost > 100000)
+hist(Product1_lower_claimCost$ClaimCost)
+hist(Product1_higer_claimCost$ClaimCost)
+
+
+Product2_lower_claimCost <-Product2_data %>% filter( ClaimCost < 500000)
+Product2_higer_claimCost <-Product2_data %>% filter( ClaimCost > 500000)
+hist(Product2_lower_claimCost$ClaimCost)
+hist(Product2_higer_claimCost$ClaimCost)
+
+```
+
+```{r Product1/Type1 }
+head(Product1_data)
+options(scipen = 999)
+
+cdf_function_prod1 <- ecdf(Product1_data$ClaimCost)
+
+# Evaluate CDF at specific points
+cdf_function_prod1(100000)
+
+plot(cdf_function_prod1, main = "Empirical CDF Branch 1", xlab = "Values", ylab = "Cumulative Probability")
+
+
+fit_lnorm <- fitdist(Product1_lower_claimCost$ClaimCost, "lnorm")
+fit_norm <- fitdist(Product1_higer_claimCost$ClaimCost, "norm")
+
+summary(fit_lnorm)
+summary(fit_norm)
+
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
+denscomp(fit_lnorm, legendtext = "lnorm")
+qqcomp(fit_lnorm, legendtext = "lnorm")
+denscomp(fit_norm, legendtext = "norm")
+qqcomp(fit_norm, legendtext = "norm")
+```
+
+```{r Product2 or Type2}
+
+hist(Product2_data$ClaimCost)
+
+cdf_function_prod2 <- ecdf(Product2_data$ClaimCost)
+
+# Evaluate CDF at specific points
+cdf_function_prod2(500000)
+
+plot(cdf_function_prod2, main = "Empirical CDF Type2", xlab = "Values", ylab = "Cumulative Probability", xlim = c(0,500000))
+
+
+fit_lnorm2 <- fitdist(Product2_lower_claimCost$ClaimCost, "lnorm")
+fit_norm2 <- fitdist(Product2_higer_claimCost$ClaimCost, "norm")
+
+summary(fit_lnorm2)
+summary(fit_norm2)
+
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
+denscomp(fit_lnorm2, legendtext = "lnorm")
+qqcomp(fit_lnorm2, legendtext = "lnorm")
+denscomp(fit_norm2, legendtext = "norm")
+qqcomp(fit_norm2, legendtext = "norm")
+```
+
+
+```{r simulation_type1 only for the daily number of claims}
+#N:  Type1
+     #summer poi: (3.0563)
+     #other seasons negbinom (3.5415, mu =8.7480  )
+
+     #Type2
+     #summer poi: (2.1673)
+     #other seasons negbinom ( 4.8928, mu =5.7349  )
+
+#X: type1  (mean, sd)
+    #lnorm: (9.9096,0.42) (96.08%)   norm:   (250791.51, 50557.53)(3.92%)
+    #type2
+    #lnorm: (10.381, 0.3932 ) (95.24%)  norm:   (2499750.6	, 243867.1	) 4.76%
+
+#Simulate for 1 Year
+set.seed(123)  # For reproducibility
+
+# Create a sequence of all days in a year
+dates <- seq.Date(from = as.Date("2023-01-01"), to = as.Date("2023-12-31"), by = "day")
+
+# Set Poisson and Negative Binomial parameters
+lambda_poisson <- 3.0563   # Poisson mean claims (May-Agu)
+mu_nb <- 8.7480             # Negative Binomial mean claims (Nov-Apr)
+size_nb <- 3.5415          # Dispersion parameter
+
+# Function to simulate claims based on the month
+simulate_claims <- function(date) {
+  month_num <- as.numeric(format(date, "%m"))  # Extract month number
+  if (month_num %in% 5:8) {  # May to August (Poisson)
+    rpois(1, lambda_poisson)
+  } else {  # November to April (Negative Binomial)
+    rnbinom(1, size = size_nb, mu = mu_nb)
+  }
+}
+
+# Simulate claims for each day
+claims <- sapply(dates, simulate_claims)
+
+# Create a data frame
+claim_data <- data.frame(Date = dates, Claims = claims)
+
+# Add index column for plot
+claim_data$Index <- 1:nrow(claim_data)
+
+# View first few rows
+head(claim_data)
+
+
+# View first few rows
+head(claim_data)
+
+ggplot(claim_data, aes(x = Index, y = Claims)) +
+  geom_line(color = "blue") +
+  theme_minimal() +
+  labs(title = "Simulated Daily Claim Numbers",
+       x = "Date",
+       y = "Number of Claims")
+
+```
+
+```{r simulation_type1 combination of both #of claims and claimCost in one year}
+set.seed(123)  # For reproducibility
+
+#X: type1  (mean, sd)
+    #lnorm: (9.9096,0.42)  norm:   (250791.51, 50557.53)
+
+# Parameters for lognormal distribution (96.08%)
+meanlog_lognorm <- 9.9096   # Mean of the lognormal distribution in log scale
+sdlog_lognorm <- 0.42   # Standard deviation in log scale
+
+# Parameters for normal distribution (3.92%)
+mean_norm <- 250791.51      # Mean of normal distribution
+sd_norm <- 50557.53         # Standard deviation of normal distribution
+
+# Create a sequence of all days in a year
+dates <- seq.Date(from = as.Date("2021-01-01"), to = as.Date("2021-12-31"), by = "day")
+
+# Set Poisson and Negative Binomial parameters
+lambda_poisson <- 3.0563   # Poisson mean claims (May-Agu)
+mu_nb <- 8.7480             # Negative Binomial mean claims (Sep-Apr)
+size_nb <- 3.5415          # Dispersion parameter
+
+# Function to simulate claim counts based on month
+simulate_claims <- function(date) {
+  month_num <- as.numeric(format(date, "%m"))  # Extract month number
+  if (month_num %in% 5:8) {  # May to October (Poisson)
+    rpois(1, lambda_poisson)
+  } else {  # Sep to April (Negative Binomial)
+    rnbinom(1, size = size_nb, mu = mu_nb)
+  }
+}
+
+# Simulate claim numbers for each day
+claims_per_day <- sapply(dates, simulate_claims)
+
+# Initialize claim amount vector
+claim_amounts <- c()
+
+# Function to simulate claim amounts
+simulate_claim_amounts <- function(num_claims) {
+  if (num_claims == 0) return(numeric(0))  # No claims -> no amounts
+  
+  # Determine claim type (96.08% lognormal, 3.92% normal)
+  is_lognormal <- runif(num_claims) < 0.9608
+  
+  # Generate claim amounts
+  lognormal_claims <- rlnorm(sum(is_lognormal), meanlog = meanlog_lognorm, sdlog = sdlog_lognorm)
+  normal_claims <- rnorm(sum(!is_lognormal), mean = mean_norm, sd = sd_norm)
+  
+  return(c(lognormal_claims, normal_claims))  # Combine both claim types
+}
+
+# Generate claim amounts for each day
+all_claim_amounts <- lapply(claims_per_day, simulate_claim_amounts)
+
+# Expand into a data frame
+claim_data <- data.frame(
+  Date = rep(dates, times = claims_per_day),
+  Claim_Amount = unlist(all_claim_amounts)
+)
+
+# View the first few rows
+head(claim_data)
+claim_data$Type <- 1
+
+ggplot(claim_data, aes(x = Date, y = Claim_Amount)) +
+  geom_point(size = 1) +
+  labs(title = "Simultion for 1 year", x = "ClaimDay", y = "ClaimCost") +
+  theme_minimal()
+```
+
+```{r simulation_type2 combination of both #of claims and claimCost}
+set.seed(123)  # For reproducibility
+      #Type2
+     #summer poi: (2.1673)
+     #other seasons negbinom ( 4.8928, mu =5.7349  )
+    #type2
+    #lnorm: (10.381, 0.3932 )  norm:   (2499750.6	, 243867.1	)
+
+# Parameters for lognormal distribution (96.08%)
+meanlog_lognorm <- 10.381  # Mean of the lognormal distribution in log scale
+sdlog_lognorm <- 0.3932   # Standard deviation in log scale
+
+# Parameters for normal distribution (3.92%)
+mean_norm <- 2499750.6      # Mean of normal distribution
+sd_norm <- 243867.1       # Standard deviation of normal distribution
+
+# Create a sequence of all days in a year
+dates <- seq.Date(from = as.Date("2021-01-01"), to = as.Date("2021-12-31"), by = "day")
+
+# Set Poisson and Negative Binomial parameters
+lambda_poisson <- 2.1673  # Poisson mean claims (May-Agu)
+mu_nb <- 5.7349             # Negative Binomial mean claims (Sep-Apr)
+size_nb <- 4.8928          # Dispersion parameter
+
+# Function to simulate claim counts based on month
+simulate_claims <- function(date) {
+  month_num <- as.numeric(format(date, "%m"))  # Extract month number
+  if (month_num %in% 5:8) {  # May to October (Poisson)
+    rpois(1, lambda_poisson)
+  } else {  # Sep to April (Negative Binomial)
+    rnbinom(1, size = size_nb, mu = mu_nb)
+  }
+}
+
+# Simulate claim numbers for each day
+claims_per_day <- sapply(dates, simulate_claims)
+
+# Initialize claim amount vector
+claim_amounts <- c()
+
+# Function to simulate claim amounts
+simulate_claim_amounts <- function(num_claims) {
+  if (num_claims == 0) return(numeric(0))  # No claims -> no amounts
+  
+  # Determine claim type (96.08% lognormal, 3.92% normal)
+  is_lognormal <- runif(num_claims) < 0.9608
+  
+  # Generate claim amounts
+  lognormal_claims <- rlnorm(sum(is_lognormal), meanlog = meanlog_lognorm, sdlog = sdlog_lognorm)
+  normal_claims <- rnorm(sum(!is_lognormal), mean = mean_norm, sd = sd_norm)
+  
+  return(c(lognormal_claims, normal_claims))  # Combine both claim types
+}
+
+# Generate claim amounts for each day
+all_claim_amounts <- lapply(claims_per_day, simulate_claim_amounts)
+
+# Expand into a data frame
+claim_data2 <- data.frame(
+  Date = rep(dates, times = claims_per_day),
+  Claim_Amount = unlist(all_claim_amounts)
+)
+
+# View the first few rows
+head(claim_data2)
+claim_data2$Type <- 2 # Add a new column with all values as 2
+
+
+ggplot(claim_data2, aes(x = Date, y = Claim_Amount)) +
+  geom_point(size = 1) +
+  labs(title = "Simultion for 1 year", x = "ClaimDay", y = "ClaimCost") +
+  theme_minimal()
+```
+
+```{r merge type 1 and 2}
+head(claim_data)
+head(claim_data2)
+
+merged_data <- rbind(claim_data, claim_data2)
+merged_data$Type <- as.factor(merged_data$Type)
+
+ggplot(merged_data, aes(x = Date, y = Claim_Amount, color = Type)) +
+  geom_point(size = 1) +
+  labs(title = "Scatter Plot of simulation", x = "ClaimDay", y = "ClaimCost") +
+  theme_minimal()
+
+```
+
+```{r merge historyData with simulation}
+
+merged_data <- merged_data %>% rename(ClaimDay = Date,  ClaimCost =  Claim_Amount , ClaimType = Type )
+
+#I need the convert int to date for random variable separating 
+# Shift the dates to start from 2010-01-01
+start_date <- as.Date("2010-01-01")
+data$ClaimDay <- as.Date(data$ClaimDay)  # Ensure it's in Date format
+data$ClaimDay <- data$ClaimDay - min(data$ClaimDay) + start_date
+#unique(data$ClaimDay) #the result is the data has info for almost everyday
+
+# Filtering for year 2019
+data_2019 <- data %>% filter(format(ClaimDay, "%Y") == "2019")
+
+merged_data_H_S <- rbind(data_2019, merged_data)
+
+ggplot(merged_data_H_S, aes(x = ClaimDay, y = ClaimCost, color = ClaimType)) +
+  geom_point(size = 1) +
+  labs(title = "Scatter Plot of simulation and historyData", x = "ClaimDay", y = "ClaimCost") +
+  theme_minimal()
+
+```

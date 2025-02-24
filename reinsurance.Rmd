@@ -1,0 +1,481 @@
+---
+title: "reinsurance"
+author: "Li Wu"
+date: "2025-02-22"
+output: pdf_document
+---
+```{r}
+
+library(gridExtra)
+
+```
+
+#simulate data from type 1 in one-year's period
+
+```{r}
+set.seed(123)
+
+  #X: type1  (mean, sd)
+    #lnorm: (9.9096,0.42)  norm:   (250791.51, 50557.53)
+
+# Parameters for lognormal distribution (96.08%)
+meanlog_lognorm <- 9.9096   # Mean of the lognormal distribution in log scale
+sdlog_lognorm <- 0.42   # Standard deviation in log scale
+
+# Parameters for normal distribution (3.92%)
+mean_norm <- 250791.51      # Mean of normal distribution
+sd_norm <- 50557.53         # Standard deviation of normal distribution
+
+# Create a sequence of all days in a year
+dates <- seq.Date(from = as.Date("2021-01-01"), to = as.Date("2021-12-31"), by = "day")
+
+# Set Poisson and Negative Binomial parameters
+lambda_poisson <- 3.0563   # Poisson mean claims (May-Agu)
+mu_nb <- 8.7480             # Negative Binomial mean claims (Sep-Apr)
+size_nb <- 3.5415          # Dispersion parameter
+
+# Function to simulate claim counts based on month
+simulate_claims <- function(date) {
+  month_num <- as.numeric(format(date, "%m"))  # Extract month number
+  if (month_num %in% 5:8) {  # May to October (Poisson)
+    rpois(1, lambda_poisson)
+  } else {  # Sep to April (Negative Binomial)
+    rnbinom(1, size = size_nb, mu = mu_nb)
+  }
+}
+
+# Simulate claim numbers for each day
+claims_per_day <- sapply(dates, simulate_claims)
+
+# Initialize claim amount vector
+claim_amounts <- c()
+
+# Function to simulate claim amounts
+simulate_claim_amounts <- function(num_claims) {
+  if (num_claims == 0) return(numeric(0))  # No claims -> no amounts
+  
+  # Determine claim type (96.08% lognormal, 3.92% normal)
+  is_lognormal <- runif(num_claims) < 0.9608
+  
+  # Generate claim amounts
+  lognormal_claims <- rlnorm(sum(is_lognormal), meanlog = meanlog_lognorm, sdlog = sdlog_lognorm)
+  normal_claims <- rnorm(sum(!is_lognormal), mean = mean_norm, sd = sd_norm)
+  
+  return(c(lognormal_claims, normal_claims))  # Combine both claim types
+}
+
+# Generate claim amounts for each day
+all_claim_amounts <- lapply(claims_per_day, simulate_claim_amounts)
+
+# Expand into a data frame
+claim_data1 <- data.frame(
+  Date = rep(dates, times = claims_per_day),
+  Claim_Amount = unlist(all_claim_amounts)
+)
+
+```
+
+
+# simulate data from type 2 in one-year's period
+```{r}
+# Parameters for lognormal distribution (96.08%)
+meanlog_lognorm <- 10.381  # Mean of the lognormal distribution in log scale
+sdlog_lognorm <- 0.3932   # Standard deviation in log scale
+
+# Parameters for normal distribution (3.92%)
+mean_norm <- 2499750.6      # Mean of normal distribution
+sd_norm <- 243867.1       # Standard deviation of normal distribution
+
+# Create a sequence of all days in a year
+dates <- seq.Date(from = as.Date("2021-01-01"), to = as.Date("2021-12-31"), by = "day")
+
+# Set Poisson and Negative Binomial parameters
+lambda_poisson <- 2.1673  # Poisson mean claims (May-Agu)
+mu_nb <- 5.7349             # Negative Binomial mean claims (Sep-Apr)
+size_nb <- 4.8928          # Dispersion parameter
+
+# Function to simulate claim counts based on month
+simulate_claims <- function(date) {
+  month_num <- as.numeric(format(date, "%m"))  # Extract month number
+  if (month_num %in% 5:8) {  # May to October (Poisson)
+    rpois(1, lambda_poisson)
+  } else {  # Sep to April (Negative Binomial)
+    rnbinom(1, size = size_nb, mu = mu_nb)
+  }
+}
+
+# Simulate claim numbers for each day
+claims_per_day <- sapply(dates, simulate_claims)
+
+# Initialize claim amount vector
+claim_amounts <- c()
+
+# Function to simulate claim amounts
+simulate_claim_amounts <- function(num_claims) {
+  if (num_claims == 0) return(numeric(0))  # No claims -> no amounts
+  
+  # Determine claim type (96.08% lognormal, 3.92% normal)
+  is_lognormal <- runif(num_claims) < 0.9608
+  
+  # Generate claim amounts
+  lognormal_claims <- rlnorm(sum(is_lognormal), meanlog = meanlog_lognorm, sdlog = sdlog_lognorm)
+  normal_claims <- rnorm(sum(!is_lognormal), mean = mean_norm, sd = sd_norm)
+  
+  return(c(lognormal_claims, normal_claims))  # Combine both claim types
+}
+
+# Generate claim amounts for each day
+all_claim_amounts <- lapply(claims_per_day, simulate_claim_amounts)
+
+# Expand into a data frame
+claim_data2 <- data.frame(
+  Date = rep(dates, times = claims_per_day),
+  Claim_Amount = unlist(all_claim_amounts)
+)
+
+```
+
+
+
+#Question (5)
+
+```{r}
+#Find the XL Cut-Off Point (90th Percentile)
+cutoff_type1 <- as.numeric(quantile(claim_data1$Claim_Amount, 0.90))  # Convert to a simple number
+cutoff_type2 <- as.numeric(quantile(claim_data2$Claim_Amount, 0.90))
+
+
+
+# Create a data frame with both branches' data
+df_type1 <- data.frame(Claim_Amount = claim_data1$Claim_Amount)
+
+df_type2 <- data.frame(Claim_Amount = claim_data2$Claim_Amount)
+
+# Plot Branch 1 and Branch 2 histograms side by side
+p1 <- ggplot(df_type1, aes(x = Claim_Amount)) +
+  geom_histogram(bins = 50, fill = "lightblue", color = "black") +
+  geom_vline(xintercept = cutoff_type1, color = "blue", size = 1.5, linetype = "dashed") +
+  labs(x = "Claim Size", y = "Frequency", title = "Branch 1: 90th Percentile") +
+  theme_minimal()
+
+p2 <- ggplot(df_type2, aes(x = Claim_Amount)) +
+  geom_histogram(bins = 50, fill = "lightblue", color = "black") +
+  geom_vline(xintercept = cutoff_type2, color = "blue", size = 1.5, linetype = "dashed") +
+  labs(x = "Claim Size", y = "Frequency", title = "Branch 2: 90th Percentile") +
+  scale_x_log10() +
+  theme_minimal() 
+
+# Arrange the two plots side by side
+grid.arrange(p1, p2, ncol = 2)
+
+```
+
+
+```{r}
+#The reinsurer covers claim amounts above the cut-off, so we split each claim into:
+#Insurer's share (below cut-off)
+#Reinsurer's share (above cut-off)
+
+
+# Apply XL-Cover
+insurer_D_type1 <- pmin(claim_data1$Claim_Amount, cutoff_type1)
+reinsurer_R_type1 <- pmax(claim_data1$Claim_Amount - cutoff_type1, 0)
+
+insurer_D_type2 <- pmin(claim_data2$Claim_Amount, cutoff_type2)
+reinsurer_R_type2 <- pmax(claim_data2$Claim_Amount - cutoff_type2, 0)
+
+
+#Price the Reinsurance Contract
+reinsurer_cost_type1 <- mean(reinsurer_R_type1) * 1.2
+reinsurer_cost_type2 <- mean(reinsurer_R_type2) * 1.2
+
+#the claim amount after reinsurance
+
+reinsurer_claimsAmount_type1 <- insurer_D_type1 + reinsurer_cost_type1
+reinsurer_claimsAmount_type2 <- insurer_D_type2 + reinsurer_cost_type2
+
+XL_type1 <- data.frame(
+  Claims = c(claim_data1$Claim_Amount, reinsurer_claimsAmount_type1),
+  Reinsurance = rep(c("Before XL-Reinsurance", "After XL-Reinsurance"), each = length(claim_data1$Claim_Amount))
+)
+
+XL_type2 <- data.frame(
+  Claims = c(claim_data2$Claim_Amount, reinsurer_claimsAmount_type2),
+  Reinsurance = rep(c("Before XL-Reinsurance", "After XL-Reinsurance"), each = length(claim_data2$Claim_Amount))
+)
+
+#Visualize the Impact of XL-Reinsurance
+# Plot histogram with density curves
+p3 <- ggplot(XL_type1, aes(x = Claims, color = Reinsurance)) +
+  geom_histogram(aes(y = ..density..), position = "identity", bins = 50, fill = "gray", color = "black", alpha = 0.5) +  
+  geom_density(lwd = 1) +  # Add fitted density curve
+  scale_x_log10() +  # Use log scale to handle skewed data
+  geom_vline(xintercept = cutoff_type2, color = "blue", linetype = "dashed", size = 1)+
+  labs(title = "Branch 1: XL Cover at 90th Percentile ", 
+       x = "Total Claim Amount", y = "Density") +
+  theme_minimal() +
+  theme(legend.position = "none")
+#+facet_wrap(~ Reinsurance) #show two histgram side by side 
+#The histogram in the plot represents the entire dataset, not separated into 'before' and 'after' categories. so it doesn't match perfectly either of them seperately
+
+p4 <- ggplot(XL_type2, aes(x = Claims, color = Reinsurance)) +
+  geom_histogram(aes(y = after_stat(density)), position = "identity", bins = 50, fill = "gray", color = "black", alpha = 0.5) +  
+  geom_density(lwd = 1) +  # Add fitted density curve
+  scale_x_log10() +  # Use log scale to handle skewed data
+  geom_vline(xintercept = cutoff_type2, color = "blue", linetype = "dashed", size = 1)+
+  labs(title = "Branch 2: XL Cover at 90th Percentile",
+       x = "Total Claim Amount", y = "Density") +
+  theme_minimal()+
+  theme(legend.title = element_text(size = 5),
+        legend.text = element_text(size = 7), 
+        legend.position = "bottom")  
+grid.arrange(p3, p4, ncol = 2)
+```
+
+#(6)
+#fuction to simulte total claims
+
+```{r}
+ #X: type1  (mean, sd)
+    #lnorm: (9.9096,0.42)  norm:   (250791.51, 50557.53)
+simulate_function_type1 <- function(){
+# Parameters for lognormal distribution (96.08%)
+meanlog_lognorm <- 9.9096   # Mean of the lognormal distribution in log scale
+sdlog_lognorm <- 0.42   # Standard deviation in log scale
+
+# Parameters for normal distribution (3.92%)
+mean_norm <- 250791.51      # Mean of normal distribution
+sd_norm <- 50557.53         # Standard deviation of normal distribution
+
+# Create a sequence of all days in a year
+dates <- seq.Date(from = as.Date("2021-01-01"), to = as.Date("2021-12-31"), by = "day")
+
+# Set Poisson and Negative Binomial parameters
+lambda_poisson <- 3.0563   # Poisson mean claims (May-Agu)
+mu_nb <- 8.7480             # Negative Binomial mean claims (Sep-Apr)
+size_nb <- 3.5415          # Dispersion parameter
+
+# Function to simulate claim counts based on month
+simulate_claims <- function(date) {
+  month_num <- as.numeric(format(date, "%m"))  # Extract month number
+  if (month_num %in% 5:8) {  # May to October (Poisson)
+    rpois(1, lambda_poisson)
+  } else {  # Sep to April (Negative Binomial)
+    rnbinom(1, size = size_nb, mu = mu_nb)
+  }
+}
+
+# Simulate claim numbers for each day
+claims_per_day <- sapply(dates, simulate_claims)
+
+# Initialize claim amount vector
+claim_amounts <- c()
+
+# Function to simulate claim amounts
+simulate_claim_amounts <- function(num_claims) {
+  if (num_claims == 0) return(numeric(0))  # No claims -> no amounts
+  
+  # Determine claim type (96.08% lognormal, 3.92% normal)
+  is_lognormal <- runif(num_claims) < 0.9608
+  
+  # Generate claim amounts
+  lognormal_claims <- rlnorm(sum(is_lognormal), meanlog = meanlog_lognorm, sdlog = sdlog_lognorm)
+  normal_claims <- rnorm(sum(!is_lognormal), mean = mean_norm, sd = sd_norm)
+  
+  return(c(lognormal_claims, normal_claims))  # Combine both claim types
+}
+
+# Generate claim amounts for each day
+all_claim_amounts <- lapply(claims_per_day, simulate_claim_amounts)
+
+# Expand into a data frame
+claim_data1 <- data.frame(
+  Date = rep(dates, times = claims_per_day),
+  Claim_Amount = unlist(all_claim_amounts)
+)
+}
+
+simulate_function_type2 <- function(){
+# Parameters for lognormal distribution (96.08%)
+meanlog_lognorm <- 10.381  # Mean of the lognormal distribution in log scale
+sdlog_lognorm <- 0.3932   # Standard deviation in log scale
+
+# Parameters for normal distribution (3.92%)
+mean_norm <- 2499750.6      # Mean of normal distribution
+sd_norm <- 243867.1       # Standard deviation of normal distribution
+
+# Create a sequence of all days in a year
+dates <- seq.Date(from = as.Date("2021-01-01"), to = as.Date("2021-12-31"), by = "day")
+
+# Set Poisson and Negative Binomial parameters
+lambda_poisson <- 2.1673  # Poisson mean claims (May-Agu)
+mu_nb <- 5.7349             # Negative Binomial mean claims (Sep-Apr)
+size_nb <- 4.8928          # Dispersion parameter
+
+# Function to simulate claim counts based on month
+simulate_claims <- function(date) {
+  month_num <- as.numeric(format(date, "%m"))  # Extract month number
+  if (month_num %in% 5:8) {  # May to October (Poisson)
+    rpois(1, lambda_poisson)
+  } else {  # Sep to April (Negative Binomial)
+    rnbinom(1, size = size_nb, mu = mu_nb)
+  }
+}
+
+# Simulate claim numbers for each day
+claims_per_day <- sapply(dates, simulate_claims)
+
+# Initialize claim amount vector
+claim_amounts <- c()
+
+# Function to simulate claim amounts
+simulate_claim_amounts <- function(num_claims) {
+  if (num_claims == 0) return(numeric(0))  # No claims -> no amounts
+  
+  # Determine claim type (96.08% lognormal, 3.92% normal)
+  is_lognormal <- runif(num_claims) < 0.9608
+  
+  # Generate claim amounts
+  lognormal_claims <- rlnorm(sum(is_lognormal), meanlog = meanlog_lognorm, sdlog = sdlog_lognorm)
+  normal_claims <- rnorm(sum(!is_lognormal), mean = mean_norm, sd = sd_norm)
+  
+  return(c(lognormal_claims, normal_claims))  # Combine both claim types
+}
+
+# Generate claim amounts for each day
+all_claim_amounts <- lapply(claims_per_day, simulate_claim_amounts)
+
+# Expand into a data frame
+claim_data2 <- data.frame(
+  Date = rep(dates, times = claims_per_day),
+  Claim_Amount = unlist(all_claim_amounts)
+)}
+
+
+
+#simulate 3000 times of the yearly total claim amount 
+total_claim1 <- replicate(3000, sum(simulate_function_type1()$Claim_Amount))
+total_claim2 <- replicate(3000, sum(simulate_function_type2()$Claim_Amount))
+```
+
+
+
+
+```{r}
+#Simulate the claims amount in one year for both Type 1 and Type 2. Then add them to get the total
+
+# Determine SL Cut-Off Points
+sl_cutoff1 <- quantile(total_claim1, 0.90)
+sl_cutoff2 <- quantile(total_claim2, 0.90)
+
+#Apply SL-Cover Reinsurance
+insurer_claims1 <- pmin(total_claim1, sl_cutoff1)
+reinsurer_claims1 <- pmax(total_claim1 - sl_cutoff1, 0)
+
+insurer_claims2 <- pmin(total_claim2, sl_cutoff2)
+reinsurer_claims2 <- pmax(total_claim2 - sl_cutoff2, 0)
+
+# Expected reinsurer cost and pricing (130% of expected cost)
+expected_reinsurer_cost1 <- mean(reinsurer_claims1)
+expected_reinsurer_cost2 <- mean(reinsurer_claims2)
+
+# Price of SL reinsurance contract
+reinsurance_price1 <- expected_reinsurer_cost1 * 1.3
+reinsurance_price2 <- expected_reinsurer_cost2 * 1.3
+
+# amount after SL reinsurance
+reinsurer_claims1 <- insurer_claims1 + reinsurance_price1
+reinsurer_claims2 <- insurer_claims2 + reinsurance_price2
+  
+  
+# Create data frame for visualization
+df_SL1 <- data.frame(
+  Claims = c(total_claim1, reinsurer_claims1),
+  Type = rep(c("Before SL-Reinsurance", "After SL-Reinsurance"), each = length(total_claim1))
+)
+
+df_SL2 <- data.frame(
+  Claims = c(total_claim2, reinsurer_claims2),
+  Type = rep(c("Before SL-Reinsurance", "After SL-Reinsurance"), each = length(total_claim2))
+)
+
+# Plot histogram with density lines
+p5 <- ggplot(df_SL1, aes(x = Claims, color = Type)) +
+  geom_histogram(aes(y = ..density..), position = "identity", bins = 50, fill = "gray", color = "black", alpha = 0.5) +  
+  geom_density(lwd = 1.2) +  # Add smooth density curve
+  scale_x_log10() + # Log scale to improve visualization
+  geom_vline(xintercept = sl_cutoff1, color = "blue", linetype = "dashed", size = 1)+
+  labs(title = "Branch 1: Impact of SL on S(t) Distribution", 
+       x = "Total Claim Amount", y = "Density") +
+  theme_minimal()+
+  theme(legend.position = "none")
+
+p6 <- ggplot(df_SL2, aes(x = Claims, color = Type)) +
+  geom_histogram(aes(y = ..density..), position = "identity", bins = 50, fill = "gray", color = "black", alpha = 0.5) +  
+  geom_density(lwd = 1.2) +  # Add smooth density curve
+  scale_x_log10() +  # Log scale to improve visualization
+  geom_vline(xintercept = sl_cutoff2, color = "blue", linetype = "dashed", size = 1)+
+  labs(title = "Branch 2", 
+       x = "Total Claim Amount", y = "Density") +
+  theme_minimal()+
+  theme(legend.title = element_text(size = 5),
+        legend.text = element_text(size = 7), 
+        legend.position = "bottom")  
+grid.arrange(p5, p6, ncol = 2)
+#Why do we have such a high number of claims at the cut-off point? It's because all claims that exceed this threshold are counted in this interval.
+```
+
+#(7) a single SL-cover for the total claim cost for the entire company.
+
+```{r}
+
+total_claim <- total_claim1 + total_claim2
+
+# Determine SL Cut-Off Points
+sl_cutoff <- quantile(total_claim, 0.90)
+
+#Apply SL-Cover Reinsurance
+insurer_claims <- pmin(total_claim, sl_cutoff)
+reinsurer_claims <- pmax(total_claim - sl_cutoff, 0)
+
+
+# Expected reinsurer cost and pricing (130% of expected cost)
+expected_reinsurer_cost <- mean(reinsurer_claims)
+
+# Price of SL reinsurance contract
+reinsurance_price <- expected_reinsurer_cost * 1.3
+
+# amount after SL reinsurance
+reinsurer_claims <- insurer_claims + reinsurance_price
+  
+  
+# Create data frame for visualization
+df_SL <- data.frame(
+  Claims = c(total_claim, reinsurer_claims),
+  Type = rep(c("Before SL-Reinsurance", "After SL-Reinsurance"), each = length(total_claim1))
+)
+
+
+# Plot histogram with density lines
+ggplot(df_SL, aes(x = Claims, color = Type)) +
+  geom_histogram(aes(y = ..density..), position = "identity", bins = 50, fill = "gray", color = "black", alpha = 0.5) +  
+  geom_density(lwd = 1.2) +  # Add smooth density curve
+  scale_x_log10() + # Log scale to improve visualization
+  geom_vline(xintercept = sl_cutoff, color = "blue", linetype = "dashed", size = 1)+
+  labs(title = "Branch 1 and 2: Impact of SL on S(t) Distribution", 
+       x = "Total Claim Amount", y = "Density") +
+  theme_minimal()
+
+```
+#(8)Based on the results from the previous sections, we would recommend either an SL cover or a joint SL cover. In both cases, we have nearly the same risk exposure at the 90th percentile, but we eliminate the potential risk in the region above the 90th percentile.
+```{r}
+
+
+```
+
+
+
+```{r}
+
+```
+

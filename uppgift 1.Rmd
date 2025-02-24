@@ -1,0 +1,235 @@
+---
+title: "Uppgift1"
+author: "Li Wu"
+date: "2025-02-07"
+output: pdf_document
+---
+
+```{r library}
+library(xts)
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+library(tseries)
+library(MASS)
+library(fitdistrplus)
+```
+
+
+```{r readTXT}
+data <- read.table("C:\\Users\\catri\\OneDrive\\??????\\VT25\\Riskmodeller och reservsättning inom sakförsäkring VT25\\Projekt1_Grupp9.txt",header = TRUE, sep = ";")
+data$ClaimType <- as.factor(data$ClaimType)
+summary(data)
+```
+
+##seperate two products
+##aggregate data by ClaimDay and get the number of claim per day.
+
+##check stationality and the distribution of product 1.
+
+```{r counts_checkStationarity}
+
+Product1_data <- data %>% filter(ClaimType == "1")
+Product2_data <- data %>% filter(ClaimType == "2")
+
+## Group by ClaimDay and count occurrences
+data_counts <- data %>% count(ClaimDay) 
+data_counts_product1 <- Product1_data %>% count(ClaimDay) 
+data_counts_product2 <- Product2_data %>% count(ClaimDay) 
+str(data_counts)
+str(Product1_data)
+plot(data_counts_product1)
+plot(data_counts_product2, xlim=c(1,600))
+
+# Convert to time series
+ts_data <- ts(data_counts$n) 
+ts_data_product1 <- ts(data_counts_product1$n) 
+ts_data_product2 <- ts(data_counts_product2$n) 
+
+ts_data_subset <- ts_data[1:365]
+
+#if we only use one year's data, then p = 2.26, use  the lag order(default)
+adf_counts_oneYear <- adf.test(ts_data_subset)
+adf_counts_oneYear
+
+#use the whole dataset, the lag order <=365, p-value = 0.6517, mindre than 365, 
+# p-value = 0.01
+adf_counts <- adf.test(ts_data, k = 365)
+adf_counts
+```
+
+
+##check count process
+
+```{r modelfitting}
+#I can see two stationary poissons in specific time interval. 
+plot(ts_data_product1, col = "blue",  main = "Comparison of count process", xlab = "Time", ylab = "Value", type = "l", xlim = c(1,365))
+
+plot(ts_data_product2, col = "red",  main = "Comparison of count process", xlab = "Time", ylab = "Value", type = "l", xlim = c(1,365))
+
+#can not see something in the histogram plot
+hist(ts_data_product1)
+
+#I need the convert int to date for random variable separating 
+# Shift the dates to start from 2010-01-01
+start_date <- as.Date("2010-01-01")
+data$ClaimDay <- as.Date(data$ClaimDay)  # Ensure it's in Date format
+data$ClaimDay <- data$ClaimDay - min(data$ClaimDay) + start_date
+#unique(data$ClaimDay) #the result is the data has info for almost everyday
+
+#seperate two branches with ClaimDay in date form
+Product1_data_date <- data %>% filter(ClaimType == "1")
+Product2_data_date <- data %>% filter(ClaimType == "2")
+
+## Group by ClaimDay and count occurrences
+counts_Product1_data_date <- Product1_data_date %>% count(ClaimDay) 
+counts_Product2_data_date <- Product2_data_date %>% count(ClaimDay) 
+str(counts_Product1_data_date)
+head(counts_Product1_data_date)
+
+#add monthly feature
+counts_Product1_data_date$month <- month(counts_Product1_data_date$ClaimDay)
+counts_Product2_data_date$month <- month(counts_Product2_data_date$ClaimDay)
+# Create the boxplot
+boxplot(n ~ month, data = counts_Product2_data_date,
+        main = "Branch 2: Distribution of daily counts by month",
+        xlab = "Month",
+        ylab = "Daily claims",
+        col = "lightblue",
+        border = "darkblue")
+
+boxplot(n ~ month, data = counts_Product1_data_date,
+        main = "Branch 1",
+        xlab = "Month",
+        ylab = "Daily claims",
+        col = "lightblue",
+        border = "darkblue")
+
+#check mean value and variance monthwise
+monthly_means_mean <- aggregate(n ~ month, data = counts_Product1_data_date, FUN = mean)
+monthly_means_var <- aggregate(n ~ month, data = counts_Product1_data_date, FUN = var)
+print(monthly_means_var)
+print(monthly_means_mean)
+```
+
+##estimate parameters
+##the code is from:
+##https://cran.r-project.org/web/packages/fitdistrplus/vignettes/fitdistrplus_vignette.html
+
+```{r est_para}
+#product 1
+head(counts_Product1_data_date)
+
+#low intensity poisson
+counts_Product1_lowInten <- counts_Product1_data_date %>% filter(month == c("5", "6" ,"7","8"))
+
+#low intensity poisson
+counts_Product1_highInten <- counts_Product1_data_date %>% filter(month != c("5", "6" ,"7","8"))
+
+
+is.vector(counts_Product1_lowInten$n)
+
+fit_pois <- fitdist(counts_Product1_lowInten$n, "pois")
+fit_nbinom <- fitdist(counts_Product1_highInten$n, "nbinom")
+fw <- counts_Product1_highInten$n
+
+summary(fit_pois)
+summary(fit_nbinom)
+
+plot.legend <- c("nbinom")
+
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
+denscomp(fit_nbinom, legendtext = "nbinom")
+qqcomp(fit_nbinom, legendtext = "nbinom")
+denscomp(fit_pois, legendtext = "pois")
+qqcomp(fit_pois, legendtext = "pois")
+
+
+# Goodness-of-fit (Chi-square)
+gof_pois1 <- gofstat(fit_pois)  # p > 0.05 indicates good fit
+gof_nbinom <- gofstat(fit_nbinom)
+gof_pois1$chisqpvalue 
+gof_nbinom$chisqpvalue
+#Trust the QQ Plot if it looks very good, especially with a large sample size.
+
+#par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
+#denscomp(fit_pois, legendtext = plot.legend)
+#qqcomp(fit_pois, legendtext = plot.legend)
+#cdfcomp(fit_pois, legendtext = plot.legend)
+#ppcomp(fit_pois, legendtext = plot.legend)
+```
+
+
+```{r est_para2}
+#product 2
+
+head(counts_Product2_data_date)
+
+#low intensity poisson
+counts_Product2_lowInten <- counts_Product2_data_date %>% filter(month == c("5", "6" ,"7","8"))
+
+#low intensity poisson
+counts_Product2_highInten <- counts_Product2_data_date %>% filter(month != c("5", "6" ,"7","8"))
+
+
+fit_pois2 <- fitdist(counts_Product2_lowInten$n, "pois")
+fit_nbinom2 <- fitdist(counts_Product2_highInten$n, "nbinom")
+
+summary(fit_pois2)
+summary(fit_nbinom2)
+
+plot.legend <- c("nbinom")
+
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
+denscomp(fit_nbinom2, legendtext = "nbinom")
+qqcomp(fit_nbinom2, legendtext = "nbinom")
+denscomp(fit_pois2, legendtext = "pois")
+qqcomp(fit_pois2, legendtext = "pois")
+```
+
+##Uppgift 2
+
+aggeregated data do no good. It will distroy the distribution of the claim size. 
+
+
+```{r}
+summary(Product1_data)
+
+plot(Product1_data)
+
+#Product1_data_aggre <- Product1_data %>%
+  #group_by(ClaimDay) %>%
+  #summarise(TotalClaimCost_daily = sum(ClaimCost, na.rm = TRUE))
+
+hist(Product1_data$ClaimCost)
+fit_exp <- fitdist(Product1_data$ClaimCost, "exp")
+
+qqcomp(fit_exp, legendtext = "exp")
+denscomp(fit_exp, legendtext = "exp")
+
+Product1_lower_claimCost <-Product1_data_aggre %>% filter( TotalClaimCost_daily < 1010000)
+Product1_ligher_claimCost <-Product1_data_aggre %>% filter( TotalClaimCost_daily > 1010000)
+
+hist(Product1_lower_claimCost$TotalClaimCost_daily)
+hist(Product1_ligher_claimCost$TotalClaimCost_daily)
+
+ts_ClaimCost_product1 <- ts(Product1_lower_claimCost$TotalClaimCost_daily) 
+ts_ClaimCost_product1_higher <- ts(Product1_ligher_claimCost$TotalClaimCost_daily) 
+
+#plot(ts_ClaimCost_product1)
+
+ts_ClaimCost_product1_subset <- ts_ClaimCost_product1[1:120]
+plot(ts_ClaimCost_product1_subset)
+
+ts_ClaimCost_product1_subset_higher <- ts_ClaimCost_product1_higher[1:120]
+plot(ts_ClaimCost_product1_subset_higher)
+
+adf.test(ts_ClaimCost_product1)
+acf(ts_ClaimCost_product1)
+
+
+adf.test(ts_ClaimCost_product1_higher)
+acf(ts_ClaimCost_product1_higher)
+
+```
+
